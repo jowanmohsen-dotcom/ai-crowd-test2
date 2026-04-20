@@ -1,0 +1,4 @@
+serviceAccountKey.json
+*.pyc
+__pycache__/
+crowd.db

@@ -3,54 +3,46 @@ import sqlite3
 from datetime import datetime, timedelta
 import urllib.request
 import json as json_lib
+import firebase_admin
+from firebase_admin import credentials, messaging, db as firebase_db
 
 # ============================================================
 #  FIREBASE CONFIG
 # ============================================================
 FIREBASE_RTDB_URL = "https://crowd-ai2-default-rtdb.firebaseio.com"
-# Get from: Firebase Console > Project Settings > Cloud Messaging > Server key (legacy)
-FIREBASE_SERVER_KEY = "YOUR_FCM_SERVER_KEY_HERE"
+
+_fb_cred = credentials.Certificate("serviceAccountKey.json")
+firebase_admin.initialize_app(_fb_cred, {"databaseURL": FIREBASE_RTDB_URL})
 
 def firebase_sync(path, data, method='PUT'):
-    """Write data to Firebase Realtime Database via REST API."""
+    """Write data to Firebase Realtime Database."""
     try:
-        url = f"{FIREBASE_RTDB_URL}/{path}.json"
-        payload = json_lib.dumps(data).encode('utf-8')
-        req = urllib.request.Request(url, data=payload, method=method)
-        req.add_header('Content-Type', 'application/json')
-        urllib.request.urlopen(req, timeout=5)
+        ref = firebase_db.reference(path)
+        if method == 'PATCH':
+            ref.update(data)
+        else:
+            ref.set(data)
     except Exception as e:
         print(f"[Firebase sync error] {e}")
 
 def firebase_send_notification(title, body, event_id=None):
-    """Send FCM push notification to all registered tokens."""
-    if FIREBASE_SERVER_KEY == "YOUR_FCM_SERVER_KEY_HERE":
-        return
+    """Send FCM push notification to all registered tokens via HTTP v1 API."""
     try:
-        # Fetch all FCM tokens from RTDB
-        url = f"{FIREBASE_RTDB_URL}/fcm_tokens.json"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=5) as res:
-            tokens_data = json_lib.loads(res.read())
+        ref = firebase_db.reference('fcm_tokens')
+        tokens_data = ref.get()
         if not tokens_data:
             return
         for uid, info in tokens_data.items():
             token = info.get('token') if isinstance(info, dict) else info
             if not token:
                 continue
-            payload = json_lib.dumps({
-                "to": token,
-                "notification": {"title": title, "body": body, "icon": "/brand_assets/logo.png"},
-                "data": {"event_id": str(event_id) if event_id else ""}
-            }).encode('utf-8')
-            fcm_req = urllib.request.Request(
-                "https://fcm.googleapis.com/fcm/send",
-                data=payload, method='POST'
+            message = messaging.Message(
+                notification=messaging.Notification(title=title, body=body),
+                data={"event_id": str(event_id) if event_id else ""},
+                token=token
             )
-            fcm_req.add_header('Content-Type', 'application/json')
-            fcm_req.add_header('Authorization', f'key={FIREBASE_SERVER_KEY}')
             try:
-                urllib.request.urlopen(fcm_req, timeout=5)
+                messaging.send(message)
             except Exception:
                 pass
     except Exception as e:
