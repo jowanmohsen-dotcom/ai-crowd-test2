@@ -116,6 +116,7 @@ async function doSignup(e) {
     }
 
     state.user = {
+      id: data.user ? data.user.id : null,
       name: fname + ' ' + lname,
       email: email,
       role: role

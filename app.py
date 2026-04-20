@@ -12,7 +12,8 @@ from firebase_admin import credentials, messaging, db as firebase_db
 FIREBASE_RTDB_URL = "https://crowd-ai2-default-rtdb.firebaseio.com"
 
 _fb_cred = credentials.Certificate("serviceAccountKey.json")
-firebase_admin.initialize_app(_fb_cred, {"databaseURL": FIREBASE_RTDB_URL})
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(_fb_cred, {"databaseURL": FIREBASE_RTDB_URL})
 
 def firebase_sync(path, data, method='PUT'):
     """Write data to Firebase Realtime Database."""
@@ -458,7 +459,7 @@ def signup():
         conn.commit()
         conn.close()
 
-        return jsonify({"message": "User registered successfully"}), 201
+        return jsonify({"message": "User registered successfully", "user": {"id": user_id, "full_name": full_name, "email": email, "role": role}}), 201
 
     except sqlite3.IntegrityError:
         return jsonify({"message": "Email already exists"}), 409
