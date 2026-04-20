@@ -7,7 +7,7 @@
 //  2. Under "Web Push certificates", click "Generate key pair"
 //  3. Paste the key string below as VAPID_KEY
 //
-var VAPID_KEY = 'YOUR_VAPID_KEY_HERE';
+var VAPID_KEY = 'BG_N2x9FPBmEJl9KsM5OhhBbw14qNyzzpm7cLySGOo86UD7PobSiUwsJRfJpemtcf-6IxyV1VmHOz4QNcV5JLAM';
 
 var _fcmInitialized = false;
 
@@ -34,11 +34,6 @@ function initFCM() {
   Notification.requestPermission().then(function(permission) {
     if (permission !== 'granted') {
       console.log('[FCM] Notification permission denied');
-      return;
-    }
-
-    if (VAPID_KEY === 'YOUR_VAPID_KEY_HERE') {
-      console.log('[FCM] Add your VAPID key to firebase-notifications.js to enable push tokens');
       return;
     }
 
