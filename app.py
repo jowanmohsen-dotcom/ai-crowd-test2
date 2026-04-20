@@ -3,6 +3,10 @@ import sqlite3
 from datetime import datetime, timedelta
 import urllib.request
 import json as json_lib
+import smtplib
+import os
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import firebase_admin
 from firebase_admin import credentials, messaging, db as firebase_db
 
@@ -48,6 +52,50 @@ def firebase_send_notification(title, body, event_id=None):
                 pass
     except Exception as e:
         print(f"[FCM notification error] {e}")
+
+# ============================================================
+#  EMAIL CONFIG
+# ============================================================
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_USER = os.environ.get('EMAIL_USER', 'jowan.mohsen@gmail.com')
+EMAIL_PASS = os.environ.get('EMAIL_PASS', 'ttcv avsc tgsg hpnm')
+
+
+def send_email(to_list, subject, html_body):
+    """Send an HTML email to a list of addresses. Silently skips if not configured."""
+    if not EMAIL_USER or not EMAIL_PASS:
+        print("[Email] Not configured — skipping send.")
+        return
+    if not to_list:
+        return
+    try:
+        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(EMAIL_USER, EMAIL_PASS)
+            for recipient in to_list:
+                msg = MIMEMultipart('alternative')
+                msg['Subject'] = subject
+                msg['From'] = EMAIL_USER
+                msg['To'] = recipient
+                msg.attach(MIMEText(html_body, 'html'))
+                server.sendmail(EMAIL_USER, recipient, msg.as_string())
+        print(f"[Email] Sent '{subject}' to {len(to_list)} recipient(s).")
+    except Exception as e:
+        print(f"[Email error] {e}")
+
+
+def get_ticket_holder_emails(event_id, cur):
+    """Return list of email addresses for all ticket purchasers of an event."""
+    cur.execute("""
+        SELECT DISTINCT u.email
+        FROM ticket_purchases tp
+        JOIN users u ON u.id = tp.user_id
+        WHERE tp.event_id = ?
+    """, (event_id,))
+    return [row["email"] for row in cur.fetchall()]
+
 
 # ============================================================
 #  APP CONFIG
@@ -831,11 +879,31 @@ def scan_entry(event_id):
         'capacity': event['capacity']
     }, method='PATCH')
 
-    if crowd == 'high':
+    if crowd == 'High':
         firebase_send_notification(
             '🚨 High Crowd Alert',
             f'Crowd at "{event["name"]}" is now HIGH — {new_count}/{event["capacity"]} people',
             event_id
+        )
+        # email all ticket holders about high crowd
+        conn2 = get_db_connection()
+        cur2 = conn2.cursor()
+        emails = get_ticket_holder_emails(event_id, cur2)
+        conn2.close()
+        percent = round((new_count / event['capacity']) * 100)
+        send_email(
+            to_list=emails,
+            subject=f"⚠️ High Crowd Alert — {event['name']}",
+            html_body=f"""
+            <div style="font-family:sans-serif;max-width:600px;margin:auto;padding:24px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;">
+              <h2 style="color:#dc2626;margin-top:0;">⚠️ High Crowd Alert</h2>
+              <p>The event <strong>{event['name']}</strong> has reached a <strong>HIGH crowd level</strong>.</p>
+              <p style="font-size:1.1em;">Current attendance: <strong>{new_count} / {event['capacity']}</strong> ({percent}%)</p>
+              <p>Please plan your arrival accordingly to avoid congestion.</p>
+              <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
+              <p style="color:#6b7280;font-size:0.85em;">You received this because you purchased a ticket for this event.</p>
+            </div>
+            """
         )
 
     # notify organizer
@@ -1125,15 +1193,17 @@ def send_emergency(event_id):
 
     # get all customers who bought tickets for this event
     cur.execute("""
-        SELECT DISTINCT user_id
-        FROM ticket_purchases
-        WHERE event_id = ?
+        SELECT DISTINCT tp.user_id, u.email
+        FROM ticket_purchases tp
+        JOIN users u ON u.id = tp.user_id
+        WHERE tp.event_id = ?
     """, (event_id,))
     customer_rows = cur.fetchall()
 
     conn.close()
 
-    # send notification to each customer
+    # send in-app notification and collect emails
+    recipient_emails = []
     for row in customer_rows:
         create_notification(
             user_id=row["user_id"],
@@ -1142,6 +1212,25 @@ def send_emergency(event_id):
             title='Emergency Announcement',
             message=message
         )
+        recipient_emails.append(row["email"])
+
+    # send emergency email to all ticket holders
+    send_email(
+        to_list=recipient_emails,
+        subject=f"🚨 Emergency Alert — {event['name']}",
+        html_body=f"""
+        <div style="font-family:sans-serif;max-width:600px;margin:auto;padding:24px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;">
+          <h2 style="color:#dc2626;margin-top:0;">🚨 Emergency Alert</h2>
+          <p>The organizer of <strong>{event['name']}</strong> has sent an urgent message:</p>
+          <div style="background:#fef2f2;border-left:4px solid #dc2626;padding:16px;border-radius:6px;margin:16px 0;">
+            <p style="margin:0;color:#1f2937;">{message}</p>
+          </div>
+          <p style="color:#6b7280;font-size:0.9em;">Event: {event['name']}<br>Date: {event['start_date']} at {event['start_time']}</p>
+          <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
+          <p style="color:#6b7280;font-size:0.85em;">You received this because you purchased a ticket for this event.</p>
+        </div>
+        """
+    )
 
     # notify organizer too
     create_notification(
