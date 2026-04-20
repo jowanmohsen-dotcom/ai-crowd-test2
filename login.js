@@ -110,6 +110,7 @@ async function doLogin(e) {
     state.eventsLoaded = false;
     state.eventsLoading = false;
 
+    if (typeof firebaseSignIn === 'function') firebaseSignIn(email, password);
     showToast('Welcome back, ' + state.user.name + '!', 'success');
 
     setTimeout(function() {

@@ -124,6 +124,7 @@ async function doSignup(e) {
     state.eventsLoaded = false;
     state.eventsLoading = false;
 
+    if (typeof firebaseSignUp === 'function') firebaseSignUp(email, pass, fname + ' ' + lname);
     showToast('Account created! Welcome, ' + fname + '!', 'success');
 
     if (role === 'organizer') {

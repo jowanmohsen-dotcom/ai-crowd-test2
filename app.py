@@ -1,6 +1,60 @@
 from flask import Flask, send_from_directory, request, jsonify
 import sqlite3
 from datetime import datetime, timedelta
+import urllib.request
+import json as json_lib
+
+# ============================================================
+#  FIREBASE CONFIG
+# ============================================================
+FIREBASE_RTDB_URL = "https://crowd-ai2-default-rtdb.firebaseio.com"
+# Get from: Firebase Console > Project Settings > Cloud Messaging > Server key (legacy)
+FIREBASE_SERVER_KEY = "YOUR_FCM_SERVER_KEY_HERE"
+
+def firebase_sync(path, data, method='PUT'):
+    """Write data to Firebase Realtime Database via REST API."""
+    try:
+        url = f"{FIREBASE_RTDB_URL}/{path}.json"
+        payload = json_lib.dumps(data).encode('utf-8')
+        req = urllib.request.Request(url, data=payload, method=method)
+        req.add_header('Content-Type', 'application/json')
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as e:
+        print(f"[Firebase sync error] {e}")
+
+def firebase_send_notification(title, body, event_id=None):
+    """Send FCM push notification to all registered tokens."""
+    if FIREBASE_SERVER_KEY == "YOUR_FCM_SERVER_KEY_HERE":
+        return
+    try:
+        # Fetch all FCM tokens from RTDB
+        url = f"{FIREBASE_RTDB_URL}/fcm_tokens.json"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=5) as res:
+            tokens_data = json_lib.loads(res.read())
+        if not tokens_data:
+            return
+        for uid, info in tokens_data.items():
+            token = info.get('token') if isinstance(info, dict) else info
+            if not token:
+                continue
+            payload = json_lib.dumps({
+                "to": token,
+                "notification": {"title": title, "body": body, "icon": "/brand_assets/logo.png"},
+                "data": {"event_id": str(event_id) if event_id else ""}
+            }).encode('utf-8')
+            fcm_req = urllib.request.Request(
+                "https://fcm.googleapis.com/fcm/send",
+                data=payload, method='POST'
+            )
+            fcm_req.add_header('Content-Type', 'application/json')
+            fcm_req.add_header('Authorization', f'key={FIREBASE_SERVER_KEY}')
+            try:
+                urllib.request.urlopen(fcm_req, timeout=5)
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[FCM notification error] {e}")
 
 # ============================================================
 #  APP CONFIG
@@ -605,8 +659,17 @@ def create_event():
         category
     ))
 
+    event_id = cur.lastrowid
     conn.commit()
     conn.close()
+
+    firebase_sync(f'events/{event_id}', {
+        'id': event_id, 'name': name, 'category': category,
+        'location': location, 'city': city,
+        'start_date': start_date, 'start_time': start_time,
+        'capacity': int(capacity), 'attendance_count': 0, 'crowd_level': 'low'
+    })
+    firebase_send_notification('New Event', f'"{name}" has been added!', event_id)
 
     return jsonify({"message": "Event created"}), 201
 
@@ -677,6 +740,13 @@ def update_event(event_id):
 
     conn.commit()
     conn.close()
+
+    firebase_sync(f'events/{event_id}', {
+        'id': event_id, 'name': name, 'category': category,
+        'location': location, 'city': city,
+        'start_date': start_date, 'start_time': start_time,
+        'capacity': int(capacity)
+    }, method='PATCH')
 
     return jsonify({"message": "Event updated"})
 
@@ -761,6 +831,19 @@ def scan_entry(event_id):
     conn.commit()
     crowd = calculate_crowd_level(new_count, event["capacity"])
     conn.close()
+
+    firebase_sync(f'events/{event_id}', {
+        'attendance_count': new_count,
+        'crowd_level': crowd,
+        'capacity': event['capacity']
+    }, method='PATCH')
+
+    if crowd == 'high':
+        firebase_send_notification(
+            '🚨 High Crowd Alert',
+            f'Crowd at "{event["name"]}" is now HIGH — {new_count}/{event["capacity"]} people',
+            event_id
+        )
 
     # notify organizer
     create_notification(

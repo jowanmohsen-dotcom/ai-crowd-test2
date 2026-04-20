@@ -83,6 +83,7 @@ function goToUserMainPage() {
 }
 window.goToUserMainPage = goToUserMainPage;
 function logout() {
+  if (typeof firebaseSignOut === 'function') firebaseSignOut();
   state.user = null;
   navigate('home');
 

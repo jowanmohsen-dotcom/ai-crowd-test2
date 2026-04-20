@@ -47,6 +47,7 @@ async function loadEvents() {
     state.eventsLoaded = true;
     state.eventsLoading = false;
     render();
+    if (typeof subscribeToRealtimeUpdates === 'function') subscribeToRealtimeUpdates();
   } catch (error) {
     console.error('LOAD EVENTS ERROR:', error);
     state.realEvents = [];
@@ -79,7 +80,7 @@ function renderEventCard(ev) {
       '<div style="height:180px;background:linear-gradient(135deg,rgba(155,16,64,0.22),rgba(255,180,0,0.12),rgba(255,255,255,0.03));"></div>' +
       '<div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(13,12,26,0.85) 0%,transparent 55%);"></div>' +
       '<span class="badge badge-cat" style="position:absolute;top:12px;left:12px;">' + category + '</span>' +
-      '<div style="position:absolute;bottom:12px;right:12px;">' + levelBadge(crowdLevel) + '</div>' +
+      '<div id="crowd-' + ev.id + '" style="position:absolute;bottom:12px;right:12px;">' + levelBadge(crowdLevel) + '</div>' +
       '<div style="position:absolute;bottom:16px;left:18px;right:18px;color:#fff;">' +
         '<div style="font-family:\'Montserrat\',sans-serif;font-weight:900;font-size:22px;line-height:1.1;">' + (ev.name || 'Untitled Event') + '</div>' +
       '</div>' +
@@ -90,11 +91,11 @@ function renderEventCard(ev) {
         '<span style="font-size:13px;color:var(--muted);">Date: ' + startDate + ' | ' + startTime + '</span>' +
       '</div>' +
       '<div style="display:flex;align-items:center;justify-content:space-between;">' +
-        '<div style="font-size:12px;color:var(--muted);"><span style="color:' + capBarColor(pct) + ';font-weight:700;">' + pct + '%</span> capacity</div>' +
+        '<div style="font-size:12px;color:var(--muted);"><span id="cappct-' + ev.id + '" style="color:' + capBarColor(pct) + ';font-weight:700;">' + pct + '%</span> capacity</div>' +
         '<button class="btn-primary" style="font-size:12px;padding:8px 16px;" onclick="event.stopPropagation();navigate(\'detail\',{id:' + ev.id + '})">View Details</button>' +
       '</div>' +
       '<div class="cap-bar-outer" style="margin-top:10px;">' +
-        '<div class="cap-bar-inner" style="width:' + pct + '%;background:' + capBarColor(pct) + ';"></div>' +
+        '<div id="capbar-' + ev.id + '" class="cap-bar-inner" style="width:' + pct + '%;background:' + capBarColor(pct) + ';"></div>' +
       '</div>' +
     '</div>' +
   '</div>';
